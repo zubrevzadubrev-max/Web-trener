@@ -1,0 +1,2222 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pulse — Цифровой тренер</title>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1115;
+    --bg-elev: #161921;
+    --card: #1a1d24;
+    --card-hover: #21252e;
+    --border: #262a33;
+    --text: #e8eaed;
+    --text-dim: #8a8f98;
+    --text-muted: #5a5f68;
+    --accent: #d4ff3d;
+    --accent-2: #00e5c7;
+    --accent-grad: linear-gradient(135deg, #d4ff3d 0%, #00e5c7 100%);
+    --danger: #ff5c7a;
+    --warning: #ffb84d;
+    --radius: 20px;
+    --radius-sm: 12px;
+    --shadow: 0 8px 32px rgba(0,0,0,.35);
+    --transition: .28s cubic-bezier(.4,0,.2,1);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 15px;
+    line-height: 1.5;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(circle at 15% 10%, rgba(212,255,61,.07), transparent 40%),
+      radial-gradient(circle at 85% 90%, rgba(0,229,199,.06), transparent 40%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Welcome screen */
+  .welcome-screen {
+    position: fixed; inset: 0;
+    background: var(--bg);
+    z-index: 200;
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  .welcome-screen.hidden { display: none; }
+  .welcome-box {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    padding: 40px;
+    max-width: 440px;
+    width: 100%;
+    text-align: center;
+    box-shadow: var(--shadow);
+  }
+  .welcome-box .logo-mark {
+    width: 64px; height: 64px;
+    border-radius: 18px;
+    background: var(--accent-grad);
+    display: grid; place-items: center;
+    color: #0a0b0f;
+    font-weight: 900;
+    font-size: 28px;
+    margin: 0 auto 20px;
+    box-shadow: 0 8px 24px rgba(212,255,61,.4);
+  }
+  .welcome-box h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; letter-spacing: -.02em; }
+  .welcome-box p { color: var(--text-dim); margin-bottom: 24px; }
+  .welcome-box input {
+    width: 100%;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+    color: var(--text);
+    font-size: 16px;
+    font-family: inherit;
+    outline: none;
+    margin-bottom: 16px;
+    transition: var(--transition);
+  }
+  .welcome-box input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(212,255,61,.15); }
+
+  /* Layout */
+  .app { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; position: relative; z-index: 1; }
+
+  /* Sidebar */
+  .sidebar {
+    background: var(--bg-elev);
+    border-right: 1px solid var(--border);
+    padding: 24px 18px;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .logo {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px 24px;
+    font-weight: 700;
+    font-size: 20px;
+    letter-spacing: -.02em;
+  }
+  .logo-mark {
+    width: 34px; height: 34px;
+    border-radius: 10px;
+    background: var(--accent-grad);
+    display: grid; place-items: center;
+    color: #0a0b0f;
+    font-weight: 900;
+    box-shadow: 0 4px 14px rgba(212,255,61,.35);
+  }
+  .logo span b { color: var(--accent); }
+
+  .nav-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 14px;
+    border-radius: var(--radius-sm);
+    color: var(--text-dim);
+    cursor: pointer;
+    font-weight: 500;
+    transition: var(--transition);
+    position: relative;
+    user-select: none;
+  }
+  .nav-item:hover { background: var(--card); color: var(--text); }
+  .nav-item.active {
+    background: linear-gradient(135deg, rgba(212,255,61,.12), rgba(0,229,199,.08));
+    color: var(--text);
+  }
+  .nav-item.active::before {
+    content: '';
+    position: absolute;
+    left: -18px; top: 50%;
+    transform: translateY(-50%);
+    width: 3px; height: 22px;
+    background: var(--accent);
+    border-radius: 0 3px 3px 0;
+  }
+  .nav-item svg { width: 20px; height: 20px; flex-shrink: 0; }
+
+  .sidebar-footer {
+    margin-top: auto;
+    padding: 16px;
+    border-radius: var(--radius);
+    background: var(--card);
+    border: 1px solid var(--border);
+  }
+  .profile { display: flex; align-items: center; gap: 12px; }
+  .avatar {
+    width: 42px; height: 42px; border-radius: 50%;
+    background: var(--accent-grad);
+    display: grid; place-items: center;
+    font-weight: 700; color: #0a0b0f;
+  }
+  .profile-info { flex: 1; min-width: 0; }
+  .profile-info .name {
+    font-weight: 600; font-size: 14px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .profile-info .meta { font-size: 12px; color: var(--text-dim); }
+  .profile-edit {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 6px;
+    transition: var(--transition);
+  }
+  .profile-edit:hover { color: var(--accent); background: var(--bg-elev); }
+
+  /* Main */
+  .main { padding: 28px 36px 60px; max-width: 100%; overflow: hidden; }
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 28px;
+    gap: 16px;
+  }
+  .page-title { font-size: 28px; font-weight: 700; letter-spacing: -.02em; }
+  .page-sub { color: var(--text-dim); font-size: 14px; margin-top: 4px; }
+
+  .search {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 10px 14px;
+    width: 280px;
+    transition: var(--transition);
+  }
+  .search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(212,255,61,.15); }
+  .search input { background: transparent; border: none; outline: none; color: var(--text); flex: 1; font-size: 14px; }
+  .search svg { width: 18px; height: 18px; color: var(--text-dim); }
+
+  /* Sections */
+  .section { display: none; animation: fadeIn .4s ease; }
+  .section.active { display: block; }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Cards */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 22px;
+    transition: var(--transition);
+  }
+
+  /* Dashboard */
+  .welcome-card {
+    background: linear-gradient(135deg, #1a1d24 0%, #21252e 100%);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 28px;
+    display: grid;
+    grid-template-columns: 1.3fr auto;
+    gap: 24px;
+    align-items: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .welcome-card::after {
+    content: '';
+    position: absolute;
+    right: -80px; top: -80px;
+    width: 260px; height: 260px;
+    background: radial-gradient(circle, rgba(212,255,61,.18), transparent 70%);
+    border-radius: 50%;
+    pointer-events: none;
+  }
+  .welcome-text h1 { font-size: 32px; font-weight: 700; letter-spacing: -.02em; margin-bottom: 8px; }
+  .welcome-text h1 span { background: var(--accent-grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .welcome-text p { color: var(--text-dim); margin-bottom: 20px; max-width: 480px; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 12px 22px;
+    border-radius: 12px;
+    border: none;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    transition: var(--transition);
+    font-family: inherit;
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: #0a0b0f;
+    box-shadow: 0 6px 20px rgba(212,255,61,.3);
+  }
+  .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 10px 28px rgba(212,255,61,.4); }
+  .btn-ghost {
+    background: var(--card);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn-ghost:hover { background: var(--card-hover); border-color: var(--accent); }
+  .btn svg { width: 16px; height: 16px; }
+
+  .readiness {
+    position: relative;
+    width: 180px; height: 180px;
+    display: grid; place-items: center;
+  }
+  .readiness svg { transform: rotate(-90deg); }
+  .readiness-circle { fill: none; stroke: var(--border); stroke-width: 12; }
+  .readiness-progress {
+    fill: none;
+    stroke: url(#readinessGrad);
+    stroke-width: 12;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 1.2s cubic-bezier(.4,0,.2,1);
+  }
+  .readiness-value { position: absolute; text-align: center; }
+  .readiness-value .num { font-size: 42px; font-weight: 700; letter-spacing: -.02em; line-height: 1; }
+  .readiness-value .label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .1em; margin-top: 4px; }
+
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-top: 20px;
+  }
+  .metric-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    transition: var(--transition);
+    position: relative;
+    overflow: hidden;
+  }
+  .metric-card:hover { transform: translateY(-3px); border-color: rgba(212,255,61,.3); }
+  .metric-icon {
+    width: 40px; height: 40px;
+    border-radius: 12px;
+    display: grid; place-items: center;
+    margin-bottom: 14px;
+  }
+  .metric-icon svg { width: 20px; height: 20px; }
+  .metric-icon.lime { background: rgba(212,255,61,.12); color: var(--accent); }
+  .metric-icon.teal { background: rgba(0,229,199,.12); color: var(--accent-2); }
+  .metric-icon.orange { background: rgba(255,184,77,.12); color: var(--warning); }
+  .metric-icon.pink { background: rgba(255,92,122,.12); color: var(--danger); }
+
+  .metric-label { color: var(--text-dim); font-size: 13px; margin-bottom: 6px; }
+  .metric-value { font-size: 26px; font-weight: 700; letter-spacing: -.02em; }
+  .metric-value small { font-size: 14px; color: var(--text-dim); font-weight: 500; margin-left: 4px; }
+  .metric-trend {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 12px; margin-top: 8px;
+    padding: 3px 8px;
+    border-radius: 20px;
+    font-weight: 600;
+  }
+  .trend-up { background: rgba(212,255,61,.12); color: var(--accent); }
+
+  .dash-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 20px;
+    margin-top: 20px;
+  }
+  .activity-chart {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 22px;
+  }
+  .chart-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
+  .chart-header h3 { font-size: 16px; font-weight: 600; }
+  .chart-header p { color: var(--text-dim); font-size: 13px; margin-top: 2px; }
+  .chart-legend { display: flex; gap: 14px; font-size: 12px; color: var(--text-dim); }
+  .legend-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+
+  .upcoming {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 22px;
+  }
+  .upcoming h3 { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+  .session-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px;
+    border-radius: var(--radius-sm);
+    transition: var(--transition);
+    cursor: pointer;
+  }
+  .session-item:hover { background: var(--card-hover); }
+  .session-day {
+    width: 44px; height: 44px;
+    border-radius: 12px;
+    background: var(--bg-elev);
+    display: grid; place-items: center;
+    text-align: center;
+    flex-shrink: 0;
+  }
+  .session-day .d { font-size: 11px; color: var(--text-dim); text-transform: uppercase; }
+  .session-day .n { font-size: 16px; font-weight: 700; }
+  .session-info { flex: 1; }
+  .session-info .t { font-weight: 600; font-size: 14px; }
+  .session-info .s { color: var(--text-dim); font-size: 12px; margin-top: 2px; }
+
+  /* Workouts */
+  .filters { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+  .filter-chip {
+    padding: 9px 16px;
+    border-radius: 100px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: var(--transition);
+    font-family: inherit;
+  }
+  .filter-chip:hover { color: var(--text); border-color: var(--text-muted); }
+  .filter-chip.active { background: var(--accent); color: #0a0b0f; border-color: var(--accent); }
+
+  .workouts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 18px;
+  }
+  .workout-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    cursor: pointer;
+    transition: var(--transition);
+    position: relative;
+    overflow: hidden;
+  }
+  .workout-card:hover { transform: translateY(-4px); border-color: rgba(212,255,61,.3); box-shadow: var(--shadow); }
+  .workout-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: var(--accent-grad);
+    opacity: 0;
+    transition: var(--transition);
+  }
+  .workout-card:hover::before { opacity: 1; }
+  .workout-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
+  .workout-tag {
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    background: rgba(212,255,61,.12);
+    color: var(--accent);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+  }
+  .workout-tag.cardio { background: rgba(0,229,199,.12); color: var(--accent-2); }
+  .workout-tag.mobility { background: rgba(255,184,77,.12); color: var(--warning); }
+  .workout-tag.stretch { background: rgba(255,92,122,.12); color: var(--danger); }
+  .workout-name { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+  .workout-desc { color: var(--text-dim); font-size: 13px; margin-bottom: 16px; min-height: 40px; }
+  .workout-meta { display: flex; gap: 16px; font-size: 12px; color: var(--text-dim); }
+  .workout-meta span { display: flex; align-items: center; gap: 5px; }
+  .workout-meta svg { width: 14px; height: 14px; }
+  .workout-level { display: flex; gap: 3px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+  .level-dot { flex: 1; height: 4px; background: var(--border); border-radius: 2px; }
+  .level-dot.filled { background: var(--accent); }
+
+  /* Player modal */
+  .modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.7);
+    backdrop-filter: blur(8px);
+    display: none;
+    align-items: center; justify-content: center;
+    z-index: 100;
+    padding: 20px;
+    animation: fadeIn .25s ease;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    width: 100%;
+    max-width: 760px;
+    max-height: 92vh;
+    overflow-y: auto;
+    padding: 28px;
+    position: relative;
+    animation: modalIn .35s cubic-bezier(.4,0,.2,1);
+  }
+  @keyframes modalIn {
+    from { opacity: 0; transform: scale(.95) translateY(10px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+  }
+  .modal-close {
+    position: absolute;
+    top: 18px; right: 18px;
+    width: 36px; height: 36px;
+    border-radius: 10px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--text);
+    cursor: pointer;
+    display: grid; place-items: center;
+    transition: var(--transition);
+    z-index: 2;
+  }
+  .modal-close:hover { background: var(--card-hover); color: var(--danger); }
+  .modal h2 { font-size: 22px; font-weight: 700; margin-bottom: 4px; padding-right: 40px; }
+  .modal .sub { color: var(--text-dim); font-size: 13px; margin-bottom: 22px; }
+
+  /* Mode tabs */
+  .mode-tabs {
+    display: flex;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 4px;
+    margin-bottom: 20px;
+    gap: 4px;
+  }
+  .mode-tab {
+    flex: 1;
+    padding: 10px 16px;
+    border-radius: 10px;
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    transition: var(--transition);
+    font-family: inherit;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .mode-tab:hover { color: var(--text); }
+  .mode-tab.active {
+    background: var(--accent);
+    color: #0a0b0f;
+  }
+  .mode-tab svg { width: 16px; height: 16px; }
+
+  /* Camera view */
+  .camera-view {
+    display: none;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .camera-view.active { display: block; }
+  .camera-stage {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 4/3;
+    background: #000;
+    border-radius: 14px;
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+  .camera-stage video {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1);
+    display: block;
+  }
+  .camera-stage canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%; height: 100%;
+    transform: scaleX(-1);
+    pointer-events: none;
+  }
+  .camera-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 16px;
+    pointer-events: none;
+  }
+  .camera-stats {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+  }
+  .cam-stat {
+    background: rgba(0,0,0,.6);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,.1);
+    border-radius: 12px;
+    padding: 10px 18px;
+    text-align: center;
+    min-width: 100px;
+  }
+  .cam-stat .v { font-size: 28px; font-weight: 700; color: var(--accent); line-height: 1; }
+  .cam-stat .l { font-size: 11px; color: rgba(255,255,255,.7); text-transform: uppercase; letter-spacing: .08em; margin-top: 4px; }
+  .cam-phase {
+    align-self: center;
+    background: rgba(0,0,0,.6);
+    backdrop-filter: blur(10px);
+    border-radius: 100px;
+    padding: 8px 20px;
+    font-weight: 600;
+    font-size: 14px;
+    transition: var(--transition);
+  }
+  .cam-phase.down { background: rgba(255,184,77,.9); color: #0a0b0f; }
+  .cam-phase.up { background: rgba(212,255,61,.9); color: #0a0b0f; }
+
+  .camera-loading {
+    position: absolute;
+    inset: 0;
+    display: grid; place-items: center;
+    background: rgba(0,0,0,.8);
+    color: var(--text);
+    flex-direction: column;
+    gap: 12px;
+    z-index: 5;
+  }
+  .camera-loading.hidden { display: none; }
+  .spinner {
+    width: 40px; height: 40px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .exercise-select {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .ex-select-btn {
+    padding: 12px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: var(--transition);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  .ex-select-btn:hover { border-color: var(--accent); color: var(--text); }
+  .ex-select-btn.active {
+    background: linear-gradient(135deg, rgba(212,255,61,.12), rgba(0,229,199,.08));
+    border-color: var(--accent);
+    color: var(--text);
+  }
+  .ex-select-btn .em { font-size: 24px; }
+
+  .timer-wrap {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    text-align: center;
+    margin-bottom: 20px;
+  }
+  .timer-ring { width: 180px; height: 180px; margin: 0 auto 14px; position: relative; }
+  .timer-ring svg { transform: rotate(-90deg); }
+  .timer-ring circle { fill: none; stroke-width: 10; }
+  .timer-bg { stroke: var(--border); }
+  .timer-fg {
+    stroke: var(--accent);
+    stroke-linecap: round;
+    transition: stroke-dashoffset .3s linear;
+  }
+  .timer-fg.rest { stroke: var(--accent-2); }
+  .timer-display { position: absolute; inset: 0; display: grid; place-items: center; }
+  .timer-display .time { font-size: 44px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .timer-display .phase { font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .1em; }
+  .timer-controls { display: flex; justify-content: center; gap: 10px; }
+
+  .exercise-list { display: flex; flex-direction: column; gap: 10px; }
+  .exercise-item {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 16px;
+    display: flex; align-items: center; gap: 14px;
+    transition: var(--transition);
+  }
+  .exercise-item.done { opacity: .5; }
+  .exercise-item.current { border-color: var(--accent); background: linear-gradient(135deg, rgba(212,255,61,.06), transparent); }
+  .ex-check {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    cursor: pointer;
+    display: grid; place-items: center;
+    flex-shrink: 0;
+    transition: var(--transition);
+  }
+  .ex-check:hover { border-color: var(--accent); }
+  .exercise-item.done .ex-check { background: var(--accent); border-color: var(--accent); }
+  .ex-check svg { width: 14px; height: 14px; color: #0a0b0f; opacity: 0; }
+  .exercise-item.done .ex-check svg { opacity: 1; }
+  .ex-info { flex: 1; }
+  .ex-name { font-weight: 600; font-size: 14px; }
+  .ex-params { color: var(--text-dim); font-size: 12px; margin-top: 3px; }
+  .ex-tip {
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    background: rgba(0,229,199,.1);
+    color: var(--accent-2);
+    font-weight: 500;
+  }
+
+  /* Analytics */
+  .analytics-grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 20px; margin-bottom: 20px; }
+  .chart-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 22px;
+  }
+  .chart-card h3 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+  .chart-card .sub { color: var(--text-dim); font-size: 13px; margin-bottom: 18px; }
+  .chart-svg { width: 100%; height: 220px; }
+  .bar-chart { width: 100%; height: 220px; }
+
+  .journal {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 22px;
+  }
+  .journal h3 { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+  .journal-form { display: grid; gap: 14px; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .form-field label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .05em; }
+  .form-field input, .form-field select, .form-field textarea {
+    width: 100%;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    color: var(--text);
+    font-size: 14px;
+    font-family: inherit;
+    outline: none;
+    transition: var(--transition);
+  }
+  .form-field input:focus, .form-field select:focus, .form-field textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(212,255,61,.12);
+  }
+  .form-field textarea { resize: vertical; min-height: 80px; }
+
+  .entries { margin-top: 20px; display: flex; flex-direction: column; gap: 10px; }
+  .entry {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 14px;
+  }
+  .entry-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .entry-date { font-size: 12px; color: var(--text-dim); }
+  .entry-tags { display: flex; gap: 6px; }
+  .entry-tag { font-size: 11px; padding: 2px 8px; border-radius: 20px; background: var(--card); color: var(--text-dim); }
+  .entry-note { font-size: 13px; color: var(--text); }
+
+  /* Library */
+  .library-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 16px;
+  }
+  .ex-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    transition: var(--transition);
+  }
+  .ex-card:hover { transform: translateY(-3px); border-color: rgba(0,229,199,.3); }
+  .ex-card-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+  .ex-card h4 { font-size: 16px; font-weight: 600; }
+  .ex-card .group { color: var(--accent-2); font-size: 12px; font-weight: 500; margin-top: 3px; }
+  .ex-card .equip { font-size: 12px; color: var(--text-dim); margin: 10px 0; display: flex; align-items: center; gap: 6px; }
+  .ex-card .mistakes {
+    background: var(--bg-elev);
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.5;
+  }
+  .ex-card .mistakes b { color: var(--warning); font-weight: 600; }
+
+  /* Recovery */
+  .recovery-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .checklist {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 22px;
+  }
+  .checklist h3 { font-size: 16px; font-weight: 600; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; }
+  .checklist h3 .count { font-size: 13px; color: var(--accent); font-weight: 600; }
+  .check-item {
+    display: flex; align-items: center; gap: 14px;
+    padding: 12px;
+    border-radius: var(--radius-sm);
+    transition: var(--transition);
+    cursor: pointer;
+  }
+  .check-item:hover { background: var(--card-hover); }
+  .check-box {
+    width: 24px; height: 24px;
+    border-radius: 8px;
+    border: 2px solid var(--border);
+    display: grid; place-items: center;
+    transition: var(--transition);
+    flex-shrink: 0;
+  }
+  .check-item.checked .check-box { background: var(--accent); border-color: var(--accent); }
+  .check-box svg { width: 14px; height: 14px; color: #0a0b0f; opacity: 0; }
+  .check-item.checked .check-box svg { opacity: 1; }
+  .check-info { flex: 1; }
+  .check-info .t { font-weight: 500; font-size: 14px; }
+  .check-info .s { color: var(--text-dim); font-size: 12px; margin-top: 2px; }
+  .check-item.checked .check-info .t { color: var(--text-dim); text-decoration: line-through; }
+
+  .tips-card {
+    background: linear-gradient(135deg, rgba(0,229,199,.08), rgba(212,255,61,.04));
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 22px;
+  }
+  .tips-card h3 { font-size: 16px; font-weight: 600; margin-bottom: 14px; }
+  .tip-item { display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .tip-item:last-child { border-bottom: none; }
+  .tip-icon {
+    width: 36px; height: 36px;
+    border-radius: 10px;
+    background: var(--card);
+    display: grid; place-items: center;
+    flex-shrink: 0;
+    font-size: 18px;
+  }
+  .tip-text .t { font-weight: 600; font-size: 14px; margin-bottom: 2px; }
+  .tip-text .s { color: var(--text-dim); font-size: 13px; }
+
+  /* Responsive */
+  @media (max-width: 1024px) {
+    .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+    .dash-grid, .analytics-grid, .recovery-grid { grid-template-columns: 1fr; }
+    .welcome-card { grid-template-columns: 1fr; }
+    .readiness { margin: 0 auto; }
+  }
+  @media (max-width: 768px) {
+    .app { grid-template-columns: 1fr; }
+    .sidebar {
+      position: fixed;
+      left: -280px;
+      top: 0;
+      width: 260px;
+      z-index: 50;
+      transition: var(--transition);
+    }
+    .sidebar.open { left: 0; box-shadow: var(--shadow); }
+    .main { padding: 20px 16px 60px; }
+    .menu-toggle { display: flex !important; }
+    .search { width: 100%; }
+    .topbar { flex-wrap: wrap; }
+    .form-row { grid-template-columns: 1fr; }
+    .page-title { font-size: 22px; }
+    .cam-stat { min-width: 80px; padding: 8px 12px; }
+    .cam-stat .v { font-size: 22px; }
+  }
+  .menu-toggle {
+    display: none;
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    align-items: center; justify-content: center;
+    cursor: pointer;
+    color: var(--text);
+  }
+
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <linearGradient id="readinessGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#d4ff3d"/>
+      <stop offset="100%" stop-color="#00e5c7"/>
+    </linearGradient>
+    <linearGradient id="chartGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#d4ff3d" stop-opacity=".4"/>
+      <stop offset="100%" stop-color="#d4ff3d" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+</svg>
+
+<!-- Welcome screen -->
+<div class="welcome-screen" id="welcomeScreen">
+  <div class="welcome-box">
+    <div class="logo-mark">P</div>
+    <h1>Добро пожаловать в Pulse</h1>
+    <p>Персональный цифровой тренер. Как к тебе обращаться?</p>
+    <input type="text" id="nameInput" placeholder="Твоё имя" maxlength="24" autofocus>
+    <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="saveName()">
+      Начать тренировки
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+    </button>
+  </div>
+</div>
+
+<div class="app">
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="logo">
+      <div class="logo-mark">P</div>
+      <span>Pulse<b>.</b></span>
+    </div>
+    <div class="nav-item active" data-section="dashboard">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+      Дашборд
+    </div>
+    <div class="nav-item" data-section="workouts">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6.5 6.5L17.5 17.5M21 21l-3.5-3.5M3 3l3.5 3.5M18 6l-3-3M6 18l-3 3M14 10l4-4M10 14l-4 4"/></svg>
+      Тренировки
+    </div>
+    <div class="nav-item" data-section="analytics">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l3-3 4 4 5-6"/></svg>
+      Аналитика
+    </div>
+    <div class="nav-item" data-section="library">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+      Библиотека
+    </div>
+    <div class="nav-item" data-section="recovery">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+      Восстановление
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="profile">
+        <div class="avatar" id="userAvatar">?</div>
+        <div class="profile-info">
+          <div class="name" id="userName">Гость</div>
+          <div class="meta">Pro · 12 дней подряд</div>
+        </div>
+        <button class="profile-edit" onclick="editName()" title="Изменить имя">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+    <div class="topbar">
+      <button class="menu-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <div>
+        <div class="page-title" id="pageTitle">Дашборд</div>
+        <div class="page-sub" id="pageSub">Вторник, 24 ноября · Готов к тренировке</div>
+      </div>
+      <div class="search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input placeholder="Поиск упражнений...">
+      </div>
+    </div>
+
+    <!-- Dashboard -->
+    <section class="section active" id="dashboard">
+      <div class="welcome-card">
+        <div class="welcome-text">
+          <h1>Привет, <span id="welcomeName">Алексей</span> 👋</h1>
+          <p>Сегодня отличный день для тренировки. Твоё тело восстановлено на 82% — можно идти на полную. Запланирована силовая на верх тела.</p>
+          <button class="btn btn-primary" onclick="switchSection('workouts')">
+            <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+            Начать тренировку
+          </button>
+          <button class="btn btn-ghost" style="margin-left:8px" onclick="switchSection('analytics')">Посмотреть прогресс</button>
+        </div>
+        <div class="readiness">
+          <svg width="180" height="180" viewBox="0 0 180 180">
+            <circle class="readiness-circle" cx="90" cy="90" r="78"/>
+            <circle class="readiness-progress" cx="90" cy="90" r="78"
+              stroke-dasharray="490"
+              stroke-dashoffset="490"
+              id="readinessRing"/>
+          </svg>
+          <div class="readiness-value">
+            <div class="num" id="readinessNum">0</div>
+            <div class="label">Готовность</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-icon lime">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          </div>
+          <div class="metric-label">Активность сегодня</div>
+          <div class="metric-value">48<small>мин</small></div>
+          <div class="metric-trend trend-up">↑ 12% к вчера</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-icon orange">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8.5 14.5A2.5 2.5 0 0011 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 11-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 002.5 2.5z"/></svg>
+          </div>
+          <div class="metric-label">Сожжено калорий</div>
+          <div class="metric-value">1 847<small>ккал</small></div>
+          <div class="metric-trend trend-up">↑ 8% к среднему</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-icon teal">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4v16M18 4v16M6 12h12M6 8h12M6 16h12"/></svg>
+          </div>
+          <div class="metric-label">Объём нагрузки</div>
+          <div class="metric-value">12.4<small>т</small></div>
+          <div class="metric-trend trend-up">↑ 340 кг за неделю</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-icon pink">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          </div>
+          <div class="metric-label">Серия дней</div>
+          <div class="metric-value">12<small>дн</small></div>
+          <div class="metric-trend trend-up">🔥 Личный рекорд</div>
+        </div>
+      </div>
+
+      <div class="dash-grid">
+        <div class="activity-chart">
+          <div class="chart-header">
+            <div>
+              <h3>Динамика активности</h3>
+              <p>Последние 7 дней</p>
+            </div>
+            <div class="chart-legend">
+              <span><span class="legend-dot" style="background:var(--accent)"></span>Тренировки</span>
+              <span><span class="legend-dot" style="background:var(--accent-2)"></span>Восстановление</span>
+            </div>
+          </div>
+          <svg class="chart-svg" viewBox="0 0 600 220" preserveAspectRatio="none" id="weekChart"></svg>
+        </div>
+        <div class="upcoming">
+          <h3>План на неделю</h3>
+          <div class="session-item">
+            <div class="session-day"><div class="d">Вт</div><div class="n">24</div></div>
+            <div class="session-info">
+              <div class="t">Upper Body Power</div>
+              <div class="s">Силовая · 55 мин · 8 упражнений</div>
+            </div>
+          </div>
+          <div class="session-item">
+            <div class="session-day"><div class="d">Ср</div><div class="n">25</div></div>
+            <div class="session-info">
+              <div class="t">Mobility Flow</div>
+              <div class="s">Мобильность · 25 мин · 6 упражнений</div>
+            </div>
+          </div>
+          <div class="session-item">
+            <div class="session-day"><div class="d">Чт</div><div class="n">26</div></div>
+            <div class="session-info">
+              <div class="t">Lower Body Strength</div>
+              <div class="s">Силовая · 60 мин · 9 упражнений</div>
+            </div>
+          </div>
+          <div class="session-item">
+            <div class="session-day"><div class="d">Пт</div><div class="n">27</div></div>
+            <div class="session-info">
+              <div class="t">HIIT Cardio</div>
+              <div class="s">Кардио · 30 мин · 7 упражнений</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Workouts -->
+    <section class="section" id="workouts">
+      <div class="filters" id="goalFilters">
+        <button class="filter-chip active" data-goal="all">Все</button>
+        <button class="filter-chip" data-goal="strength">💪 Силовая</button>
+        <button class="filter-chip" data-goal="cardio">🏃 Кардио</button>
+        <button class="filter-chip" data-goal="mobility">🧘 Мобильность</button>
+        <button class="filter-chip" data-goal="stretch">🤸 Растяжка</button>
+      </div>
+      <div class="filters" id="levelFilters">
+        <button class="filter-chip active" data-level="all">Любой уровень</button>
+        <button class="filter-chip" data-level="1">Новичок</button>
+        <button class="filter-chip" data-level="2">Средний</button>
+        <button class="filter-chip" data-level="3">Продвинутый</button>
+      </div>
+      <div class="workouts-grid" id="workoutsGrid"></div>
+    </section>
+
+    <!-- Analytics -->
+    <section class="section" id="analytics">
+      <div class="analytics-grid">
+        <div class="chart-card">
+          <h3>Объём нагрузки по неделям</h3>
+          <div class="sub">Суммарный тоннаж за последние 8 недель</div>
+          <svg class="bar-chart" viewBox="0 0 600 220" preserveAspectRatio="none" id="volumeChart"></svg>
+        </div>
+        <div class="chart-card">
+          <h3>Прогресс в жиме лёжа</h3>
+          <div class="sub">Рабочий вес × повторения</div>
+          <svg class="chart-svg" viewBox="0 0 400 220" preserveAspectRatio="none" id="progressChart"></svg>
+        </div>
+      </div>
+
+      <div class="analytics-grid">
+        <div class="chart-card">
+          <h3>Восстановление</h3>
+          <div class="sub">Индекс готовности за последние 14 дней</div>
+          <svg class="chart-svg" viewBox="0 0 600 220" preserveAspectRatio="none" id="recoveryChart"></svg>
+        </div>
+        <div class="journal">
+          <h3>Дневник после тренировки</h3>
+          <div class="journal-form">
+            <div class="form-row">
+              <div class="form-field">
+                <label>Сложность</label>
+                <select id="journalDiff">
+                  <option>Легко</option>
+                  <option selected>Средне</option>
+                  <option>Тяжело</option>
+                  <option>На пределе</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label>Самочувствие</label>
+                <select id="journalFeel">
+                  <option>Отличное</option>
+                  <option selected>Хорошее</option>
+                  <option>Нормальное</option>
+                  <option>Устал</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-field">
+              <label>Боль в мышцах (1-10)</label>
+              <input type="range" min="1" max="10" value="4" id="journalPain" oninput="document.getElementById('painVal').textContent=this.value">
+              <div style="text-align:right;font-size:12px;color:var(--text-dim);margin-top:4px">Уровень: <span id="painVal" style="color:var(--accent);font-weight:600">4</span>/10</div>
+            </div>
+            <div class="form-field">
+              <label>Заметка</label>
+              <textarea id="journalNote" placeholder="Как прошла тренировка?"></textarea>
+            </div>
+            <button class="btn btn-primary" onclick="saveJournal()">Сохранить запись</button>
+            <div class="entries" id="journalEntries"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Library -->
+    <section class="section" id="library">
+      <div class="filters" id="muscleFilters">
+        <button class="filter-chip active" data-muscle="all">Все группы</button>
+        <button class="filter-chip" data-muscle="Грудь">Грудь</button>
+        <button class="filter-chip" data-muscle="Спина">Спина</button>
+        <button class="filter-chip" data-muscle="Ноги">Ноги</button>
+        <button class="filter-chip" data-muscle="Плечи">Плечи</button>
+        <button class="filter-chip" data-muscle="Пресс">Пресс</button>
+      </div>
+      <div class="library-grid" id="libraryGrid"></div>
+    </section>
+
+    <!-- Recovery -->
+    <section class="section" id="recovery">
+      <div class="recovery-grid">
+        <div class="checklist">
+          <h3>Чек-лист восстановления <span class="count" id="checkCount">0/7</span></h3>
+          <div id="checklistItems"></div>
+        </div>
+        <div class="tips-card">
+          <h3>Советы по восстановлению</h3>
+          <div class="tip-item">
+            <div class="tip-icon">💧</div>
+            <div class="tip-text">
+              <div class="t">Вода</div>
+              <div class="s">30 мл на кг веса в день. После тренировки — ещё 500 мл.</div>
+            </div>
+          </div>
+          <div class="tip-item">
+            <div class="tip-icon">🛌</div>
+            <div class="tip-text">
+              <div class="t">Сон 7-9 часов</div>
+              <div class="s">Во сне происходит синтез гормона роста и восстановление мышц.</div>
+            </div>
+          </div>
+          <div class="tip-item">
+            <div class="tip-icon">🥗</div>
+            <div class="tip-text">
+              <div class="t">Белок 1.6-2 г/кг</div>
+              <div class="s">Распредели в течение дня — 4-5 порций по 25-40 г.</div>
+            </div>
+          </div>
+          <div class="tip-item">
+            <div class="tip-icon">🧊</div>
+            <div class="tip-text">
+              <div class="t">Активное восстановление</div>
+              <div class="s">Прогулка, йога или МФР ускоряют выведение метаболитов.</div>
+            </div>
+          </div>
+          <div class="tip-item">
+            <div class="tip-icon">🧘</div>
+            <div class="tip-text">
+              <div class="t">Заминка 5-10 мин</div>
+              <div class="s">Плавное снижение ЧСС и растяжка снижают риск травм.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- Player Modal -->
+<div class="modal-overlay" id="playerModal">
+  <div class="modal">
+    <button class="modal-close" onclick="closePlayer()">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+    <h2 id="playerTitle">Тренировка</h2>
+    <div class="sub" id="playerSub">Пошаговый режим</div>
+
+    <div class="mode-tabs">
+      <button class="mode-tab active" data-mode="timer" onclick="switchMode('timer')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        Таймер
+      </button>
+      <button class="mode-tab" data-mode="camera" onclick="switchMode('camera')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+        Камера · Счётчик
+      </button>
+    </div>
+
+    <!-- Camera view -->
+    <div class="camera-view" id="cameraView">
+      <div class="exercise-select" id="exerciseSelect"></div>
+      <div class="camera-stage">
+        <video id="cameraVideo" autoplay playsinline muted></video>
+        <canvas id="cameraCanvas"></canvas>
+        <div class="camera-overlay">
+          <div class="camera-stats">
+            <div class="cam-stat">
+              <div class="v" id="camReps">0</div>
+              <div class="l">Повторений</div>
+            </div>
+            <div class="cam-stat">
+              <div class="v" id="camTime">00:00</div>
+              <div class="l">Время</div>
+            </div>
+          </div>
+          <div class="cam-phase" id="camPhase">Готовься</div>
+        </div>
+        <div class="camera-loading" id="cameraLoading">
+          <div class="spinner"></div>
+          <div id="cameraLoadingText">Загрузка модели...</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:center">
+        <button class="btn btn-ghost" onclick="resetCameraCounter()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+          Сбросить счётчик
+        </button>
+      </div>
+    </div>
+
+    <!-- Timer view -->
+    <div class="timer-wrap" id="timerWrap">
+      <div class="timer-ring">
+        <svg width="180" height="180" viewBox="0 0 180 180">
+          <circle class="timer-bg" cx="90" cy="90" r="78"/>
+          <circle class="timer-fg" cx="90" cy="90" r="78"
+            stroke-dasharray="490"
+            stroke-dashoffset="0"
+            id="timerRing"/>
+        </svg>
+        <div class="timer-display">
+          <div>
+            <div class="time" id="timerTime">00:45</div>
+            <div class="phase" id="timerPhase">Подход</div>
+          </div>
+        </div>
+      </div>
+      <div class="timer-controls">
+        <button class="btn btn-ghost" onclick="timerAction('reset')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+          Сброс
+        </button>
+        <button class="btn btn-primary" id="timerBtn" onclick="timerAction('toggle')">
+          <svg viewBox="0 0 24 24" fill="currentColor" id="timerBtnIcon"><polygon points="5,3 19,12 5,21"/></svg>
+          <span id="timerBtnText">Старт</span>
+        </button>
+        <button class="btn btn-ghost" onclick="timerAction('skip')">
+          Пропустить
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5,4 15,12 5,20" fill="currentColor"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="exercise-list" id="exerciseList"></div>
+  </div>
+</div>
+
+<script>
+// ========== DATA ==========
+const workouts = [
+  { id:1, name:'Upper Body Power', desc:'Мощная тренировка на верх тела с базовыми жимовыми движениями', goal:'strength', level:3, time:55, exercises:8, tag:'Силовая',
+    list:[
+      {name:'Отжимания', params:'4×15', tip:'Локти под 45°, тело — прямая линия', camera:'pushups'},
+      {name:'Жим гантелей на наклонной', params:'3×10 · 28 кг', tip:'Не расставляй локти слишком широко'},
+      {name:'Подтягивания широким хватом', params:'4×8 · +10 кг', tip:'Тяни грудью к перекладине'},
+      {name:'Тяга штанги в наклоне', params:'3×10 · 70 кг', tip:'Спина прямая, тяни к поясу'},
+      {name:'Жим гантелей сидя', params:'3×10 · 22 кг', tip:'Не отклоняйся назад'},
+      {name:'Французский жим', params:'3×12 · 25 кг', tip:'Локти зафиксированы'},
+      {name:'Подъём на бицепс', params:'3×12 · 30 кг', tip:'Без раскачки корпуса', camera:'curls'},
+      {name:'Планка', params:'3×60 сек', tip:'Тело — прямая линия'}
+    ]},
+  { id:2, name:'Lower Body Strength', desc:'Тяжёлая тренировка ног с акцентом на приседания', goal:'strength', level:3, time:60, exercises:9, tag:'Силовая',
+    list:[
+      {name:'Приседания', params:'5×15', tip:'Колени по направлению стоп', camera:'squats'},
+      {name:'Румынская становая', params:'4×8 · 100 кг', tip:'Штанга скользит вдоль ног'},
+      {name:'Выпады с гантелями', params:'3×12 на ногу · 24 кг', tip:'Длинный шаг'},
+      {name:'Жим ногами', params:'3×12 · 180 кг', tip:'Не выпрямляй колени полностью'},
+      {name:'Сгибания ног лёжа', params:'3×12 · 50 кг', tip:'Контролируемое движение'},
+      {name:'Подъёмы на носки', params:'4×15 · 80 кг', tip:'Полная амплитуда'},
+      {name:'Гиперэкстензия', params:'3×15 · +10 кг', tip:'Не переразгибай спину'},
+      {name:'Приседания с выпрыгиванием', params:'3×12', tip:'Мягкое приземление', camera:'jumpSquats'},
+      {name:'Планка', params:'3×60 сек', tip:'Дыши ровно'}
+    ]},
+  { id:3, name:'HIIT Cardio Blast', desc:'Интервальная тренировка для жиросжигания', goal:'cardio', level:2, time:30, exercises:7, tag:'Кардио',
+    list:[
+      {name:'Бёрпи', params:'40 сек работа / 20 сек отдых', tip:'Спина прямая в планке'},
+      {name:'Прыжки в планке', params:'40/20 · 4 раунда', tip:'Ноги вместе'},
+      {name:'Скалолаз', params:'40/20', tip:'Колени к груди по очереди'},
+      {name:'Приседания с прыжком', params:'40/20', tip:'Мягкое приземление', camera:'jumpSquats'},
+      {name:'Отжимания', params:'40/20', tip:'Локти под 45°', camera:'pushups'},
+      {name:'Прыжки на скакалке', params:'60 сек', tip:'Прыгай на носках'},
+      {name:'Спринт на месте', params:'30 сек максимум', tip:'Высокое поднимание бедра'}
+    ]},
+  { id:4, name:'Mobility Flow', desc:'Комплекс на мобильность суставов', goal:'mobility', level:1, time:25, exercises:6, tag:'Мобильность',
+    list:[
+      {name:'Кошка-корова', params:'2 мин', tip:'Движение от таза'},
+      {name:'Мировой лучший растяжка', params:'5 повторов на сторону', tip:'Задержись в нижней точке'},
+      {name:'90/90 растяжка бёдер', params:'60 сек на сторону', tip:'Спина прямая'},
+      {name:'Глубокий присед с разворотом', params:'8 повторов', tip:'Пятки прижаты'},
+      {name:'Растяжка грудного отдела', params:'2 мин', tip:'Дыши глубоко'},
+      {name:'Поза ребёнка', params:'2 мин', tip:'Руки максимально вперёд'}
+    ]},
+  { id:5, name:'Deep Stretch', desc:'Восстановительная растяжка', goal:'stretch', level:1, time:20, exercises:6, tag:'Растяжка',
+    list:[
+      {name:'Поза голубя', params:'90 сек на сторону', tip:'Не заваливай таз'},
+      {name:'Растяжка подколенных', params:'60 сек на ногу', tip:'Не округляй спину'},
+      {name:'Растяжка квадрицепса', params:'60 сек на ногу', tip:'Таз подкручен'},
+      {name:'Бабочка', params:'2 мин', tip:'Колени вниз'},
+      {name:'Растяжка грудных у стены', params:'60 сек на руку', tip:'Локоть на уровне плеча'},
+      {name:'Шавасана', params:'3 мин', tip:'Полное расслабление'}
+    ]},
+  { id:6, name:'Full Body Beginner', desc:'Базовая тренировка на всё тело', goal:'strength', level:1, time:40, exercises:7, tag:'Силовая',
+    list:[
+      {name:'Приседания', params:'3×15', tip:'Вес на пятках', camera:'squats'},
+      {name:'Отжимания', params:'3×10', tip:'Тело — прямая линия', camera:'pushups'},
+      {name:'Тяга гантели в наклоне', params:'3×12 на руку · 10 кг', tip:'Локоть вдоль корпуса'},
+      {name:'Выпады на месте', params:'3×10 на ногу', tip:'Колено не выходит за носок'},
+      {name:'Жим гантелей стоя', params:'3×12 · 8 кг', tip:'Не прогибай поясницу'},
+      {name:'Планка', params:'3×30 сек', tip:'Дыши ровно'},
+      {name:'Скручивания', params:'3×15', tip:'Не тяни шею'}
+    ]},
+  { id:7, name:'Core Crusher', desc:'Интенсивная тренировка пресса', goal:'strength', level:2, time:25, exercises:6, tag:'Силовая',
+    list:[
+      {name:'Подъём ног в висе', params:'4×12', tip:'Без раскачки'},
+      {name:'Ролик для пресса', params:'3×10', tip:'Спина круглая'},
+      {name:'Русский твист', params:'3×20 · 10 кг', tip:'Поворот от плеч'},
+      {name:'Планка с подъёмом ноги', params:'3×12 на сторону', tip:'Таз не крутится'},
+      {name:'Боковая планка', params:'3×45 сек на сторону', tip:'Тело — прямая линия'},
+      {name:'Vacuum', params:'5×20 сек', tip:'Выдох — втяни живот'}
+    ]},
+  { id:8, name:'Endurance Run', desc:'Длительная кардио-сессия', goal:'cardio', level:2, time:45, exercises:5, tag:'Кардио',
+    list:[
+      {name:'Разминка ходьба', params:'5 мин', tip:'Постепенно увеличивай темп'},
+      {name:'Бег в зоне 2', params:'30 мин', tip:'Дыхание через нос'},
+      {name:'Интервалы', params:'5×2 мин быстро / 1 мин легко', tip:'ЧСС 85-90%'},
+      {name:'Заминка', params:'5 мин ходьба', tip:'Постепенно снижай темп'},
+      {name:'Растяжка', params:'5 мин', tip:'Все основные группы'}
+    ]}
+];
+
+const library = [
+  {name:'Приседания со штангой', group:'Ноги', equip:'Штанга, стойки', mistakes:'Колени внутрь, отрыв пяток, округление спины'},
+  {name:'Жим штанги лёжа', group:'Грудь', equip:'Штанга, скамья', mistakes:'Отбив от груди, расставленные локти'},
+  {name:'Становая тяга', group:'Спина', equip:'Штанга', mistakes:'Круглая спина, штанга далеко от ног'},
+  {name:'Подтягивания', group:'Спина', equip:'Турник', mistakes:'Раскачка, тяга только руками'},
+  {name:'Жим гантелей сидя', group:'Плечи', equip:'Гантели, скамья', mistakes:'Прогиб в пояснице'},
+  {name:'Выпады', group:'Ноги', equip:'Гантели / штанга', mistakes:'Колено за носком, узкая постановка'},
+  {name:'Планка', group:'Пресс', equip:'Без оборудования', mistakes:'Провисание таза, задержка дыхания'},
+  {name:'Тяга штанги в наклоне', group:'Спина', equip:'Штанга', mistakes:'Слишком прямой корпус, рывки'},
+  {name:'Отжимания', group:'Грудь', equip:'Без оборудования', mistakes:'Разведение локтей, провисание таза'},
+  {name:'Румынская становая', group:'Ноги', equip:'Штанга / гантели', mistakes:'Круглая спина, сгибание коленей'},
+  {name:'Скручивания', group:'Пресс', equip:'Без оборудования', mistakes:'Тяга шеи руками, рывки'},
+  {name:'Махи гантелями в стороны', group:'Плечи', equip:'Гантели', mistakes:'Подключение трапеции, рывки'}
+];
+
+const journalData = [
+  {date:'23 ноября', diff:'Тяжело', feel:'Нормальное', pain:7, note:'Присед пошёл хорошо, добавил 5 кг.'},
+  {date:'21 ноября', diff:'Средне', feel:'Хорошее', pain:4, note:'Лёгкая мобильность. Чувствую себя отлично.'},
+  {date:'20 ноября', diff:'На пределе', feel:'Устал', pain:8, note:'Новый рекорд в жиме — 100 кг на 1 раз!'}
+];
+
+const checklist = [
+  {t:'Сон 7-9 часов', s:'Сегодня: 7ч 42м', icon:'🛌', checked:true},
+  {t:'Вода 2.5+ литра', s:'Выпито: 1.8 л из 2.5 л', icon:'💧', checked:false},
+  {t:'Разминка 10 минут', s:'Суставная + кардио', icon:'🔥', checked:true},
+  {t:'Заминка и растяжка', s:'5-10 минут после тренировки', icon:'🧘', checked:false},
+  {t:'Белок 1.6 г/кг', s:'Съедено: 110 г из 136 г', icon:'🥗', checked:false},
+  {t:'Активное восстановление', s:'Прогулка 30+ минут', icon:'🚶', checked:false},
+  {t:'МФР / массаж', s:'10 минут на проблемные зоны', icon:'💆', checked:false}
+];
+
+// Camera exercises config
+const cameraExercises = {
+  pushups:    { name:'Отжимания',     emoji:'💪', joint:'elbow',  upAngle:160, downAngle:90,  side:'either' },
+  squats:     { name:'Приседания',    emoji:'🦵', joint:'knee',   upAngle:160, downAngle:90,  side:'either' },
+  curls:      { name:'Подъём на бицепс', emoji:'💪', joint:'elbow', upAngle:160, downAngle:70,  side:'either' },
+  jumpSquats: { name:'Приседания с прыжком', emoji:'🦘', joint:'knee', upAngle:160, downAngle:90, side:'either' },
+  shoulderPress: { name:'Жим стоя', emoji:'🏋️', joint:'elbow', upAngle:160, downAngle:80, side:'either' }
+};
+
+// ========== USER NAME ==========
+let userName = localStorage.getItem('pulse_user_name') || '';
+
+function initUser() {
+  if (userName) {
+    document.getElementById('welcomeScreen').classList.add('hidden');
+    updateUserUI();
+  } else {
+    document.getElementById('welcomeScreen').classList.remove('hidden');
+  }
+}
+function saveName() {
+  const input = document.getElementById('nameInput');
+  const name = input.value.trim();
+  if (!name) {
+    input.style.borderColor = 'var(--danger)';
+    input.focus();
+    return;
+  }
+  userName = name;
+  localStorage.setItem('pulse_user_name', name);
+  document.getElementById('welcomeScreen').classList.add('hidden');
+  updateUserUI();
+}
+function editName() {
+  const newName = prompt('Как к тебе обращаться?', userName);
+  if (newName && newName.trim()) {
+    userName = newName.trim();
+    localStorage.setItem('pulse_user_name', userName);
+    updateUserUI();
+  }
+}
+function updateUserUI() {
+  document.getElementById('userName').textContent = userName;
+  document.getElementById('welcomeName').textContent = userName;
+  const initials = userName.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
+  document.getElementById('userAvatar').textContent = initials || '?';
+}
+document.getElementById('nameInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') saveName();
+});
+
+// ========== NAVIGATION ==========
+const titles = {
+  dashboard: ['Дашборд', 'Вторник, 24 ноября · Готов к тренировке'],
+  workouts: ['Тренировки', 'Выбери программу или запусти быструю сессию'],
+  analytics: ['Аналитика', 'Прогресс, динамика и дневник'],
+  library: ['Библиотека упражнений', 'Техника, оборудование и частые ошибки'],
+  recovery: ['Восстановление', 'Чек-лист и советы']
+};
+
+function switchSection(id) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.section === id));
+  document.getElementById('pageTitle').textContent = titles[id][0];
+  document.getElementById('pageSub').textContent = titles[id][1];
+  document.getElementById('sidebar').classList.remove('open');
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+document.querySelectorAll('.nav-item').forEach(n => n.addEventListener('click', () => switchSection(n.dataset.section)));
+
+// ========== READINESS ==========
+function animateReadiness() {
+  const target = 82;
+  const ring = document.getElementById('readinessRing');
+  const num = document.getElementById('readinessNum');
+  const circumference = 490;
+  const offset = circumference - (target/100) * circumference;
+  setTimeout(() => { ring.style.strokeDashoffset = offset; }, 200);
+  let cur = 0;
+  const step = () => {
+    cur += 2;
+    if (cur > target) cur = target;
+    num.textContent = cur;
+    if (cur < target) requestAnimationFrame(step);
+  };
+  step();
+}
+animateReadiness();
+
+// ========== WEEK CHART ==========
+function drawWeekChart() {
+  const svg = document.getElementById('weekChart');
+  const days = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+  const train = [65, 45, 0, 80, 30, 55, 0];
+  const recov = [30, 50, 70, 20, 60, 40, 80];
+  const w = 600, h = 220, pad = 30;
+  const bw = (w - pad*2) / days.length;
+  let html = '';
+  for (let i=0; i<=4; i++) {
+    const y = pad + (h - pad*2) * i/4;
+    html += `<line x1="${pad}" y1="${y}" x2="${w-pad}" y2="${y}" stroke="#262a33" stroke-width="1"/>`;
+  }
+  train.forEach((v, i) => {
+    const x = pad + bw*i + bw*0.2;
+    const bh = (h - pad*2) * v/100;
+    const y = h - pad - bh;
+    html += `<rect x="${x}" y="${y}" width="${bw*0.25}" height="${bh}" rx="4" fill="#d4ff3d" opacity=".85"/>`;
+  });
+  recov.forEach((v, i) => {
+    const x = pad + bw*i + bw*0.5;
+    const bh = (h - pad*2) * v/100;
+    const y = h - pad - bh;
+    html += `<rect x="${x}" y="${y}" width="${bw*0.25}" height="${bh}" rx="4" fill="#00e5c7" opacity=".85"/>`;
+  });
+  days.forEach((d, i) => {
+    const x = pad + bw*i + bw/2;
+    html += `<text x="${x}" y="${h-8}" text-anchor="middle" fill="#8a8f98" font-size="12" font-family="inherit">${d}</text>`;
+  });
+  svg.innerHTML = html;
+}
+drawWeekChart();
+
+// ========== WORKOUTS ==========
+let currentGoal = 'all', currentLevel = 'all';
+function renderWorkouts() {
+  const grid = document.getElementById('workoutsGrid');
+  const filtered = workouts.filter(w =>
+    (currentGoal === 'all' || w.goal === currentGoal) &&
+    (currentLevel === 'all' || w.level == currentLevel)
+  );
+  if (filtered.length === 0) {
+    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:60px;color:var(--text-dim)">Ничего не найдено.</div>';
+    return;
+  }
+  grid.innerHTML = filtered.map(w => {
+    const tagClass = w.goal === 'cardio' ? 'cardio' : w.goal === 'mobility' ? 'mobility' : w.goal === 'stretch' ? 'stretch' : '';
+    const levels = [1,2,3].map(l => `<div class="level-dot ${l<=w.level?'filled':''}"></div>`).join('');
+    return `
+      <div class="workout-card" onclick="openPlayer(${w.id})">
+        <div class="workout-header">
+          <span class="workout-tag ${tagClass}">${w.tag}</span>
+        </div>
+        <div class="workout-name">${w.name}</div>
+        <div class="workout-desc">${w.desc}</div>
+        <div class="workout-meta">
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>${w.time} мин</span>
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4v16M18 4v16M6 12h12"/></svg>${w.exercises} упр.</span>
+          <span>Ур. ${['','Новичок','Средний','Продвинутый'][w.level]}</span>
+        </div>
+        <div class="workout-level">${levels}</div>
+      </div>
+    `;
+  }).join('');
+}
+document.querySelectorAll('#goalFilters .filter-chip').forEach(c => c.addEventListener('click', () => {
+  document.querySelectorAll('#goalFilters .filter-chip').forEach(x => x.classList.remove('active'));
+  c.classList.add('active');
+  currentGoal = c.dataset.goal;
+  renderWorkouts();
+}));
+document.querySelectorAll('#levelFilters .filter-chip').forEach(c => c.addEventListener('click', () => {
+  document.querySelectorAll('#levelFilters .filter-chip').forEach(x => x.classList.remove('active'));
+  c.classList.add('active');
+  currentLevel = c.dataset.level;
+  renderWorkouts();
+}));
+renderWorkouts();
+
+// ========== PLAYER ==========
+let playerState = null;
+let timerInterval = null;
+let timerRunning = false;
+let timerPhase = 'work';
+let timerRemaining = 0;
+let timerTotal = 0;
+let currentExIdx = 0;
+let currentMode = 'timer';
+
+function openPlayer(id) {
+  const w = workouts.find(x => x.id === id);
+  if (!w) return;
+  playerState = { workout: w, done: new Array(w.list.length).fill(false) };
+  currentExIdx = 0;
+  document.getElementById('playerTitle').textContent = w.name;
+  document.getElementById('playerSub').textContent = `${w.time} мин · ${w.exercises} упражнений`;
+  renderExerciseList();
+  setTimer(45, 'work');
+  switchMode('timer');
+  document.getElementById('playerModal').classList.add('show');
+}
+function closePlayer() {
+  document.getElementById('playerModal').classList.remove('show');
+  stopTimer();
+  stopCamera();
+}
+
+function switchMode(mode) {
+  currentMode = mode;
+  document.querySelectorAll('.mode-tab').forEach(t => t.classList.toggle('active', t.dataset.mode === mode));
+  document.getElementById('timerWrap').style.display = mode === 'timer' ? 'block' : 'none';
+  const camView = document.getElementById('cameraView');
+  if (mode === 'camera') {
+    camView.classList.add('active');
+    initCameraMode();
+  } else {
+    camView.classList.remove('active');
+    stopCamera();
+  }
+}
+
+function renderExerciseList() {
+  const list = document.getElementById('exerciseList');
+  list.innerHTML = playerState.workout.list.map((ex, i) => {
+    const done = playerState.done[i];
+    const current = i === currentExIdx && !done;
+    const hasCam = !!ex.camera;
+    return `
+      <div class="exercise-item ${done?'done':''} ${current?'current':''}">
+        <div class="ex-check" onclick="toggleExercise(${i})">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+        <div class="ex-info">
+          <div class="ex-name">${ex.name} ${hasCam?'<span style="color:var(--accent-2);font-size:11px;margin-left:6px">📹 камера</span>':''}</div>
+          <div class="ex-params">${ex.params}</div>
+        </div>
+        <div class="ex-tip">${ex.tip}</div>
+      </div>
+    `;
+  }).join('');
+}
+function toggleExercise(i) {
+  playerState.done[i] = !playerState.done[i];
+  if (playerState.done[i] && i === currentExIdx) {
+    let next = i+1;
+    while (next < playerState.done.length && playerState.done[next]) next++;
+    if (next < playerState.done.length) currentExIdx = next;
+  } else if (!playerState.done[i]) {
+    currentExIdx = i;
+  }
+  renderExerciseList();
+  if (playerState.done[i] && currentMode === 'timer') {
+    setTimer(60, 'rest');
+  }
+}
+
+function setTimer(seconds, phase) {
+  timerPhase = phase;
+  timerRemaining = seconds;
+  timerTotal = seconds;
+  updateTimerDisplay();
+  document.getElementById('timerPhase').textContent = phase === 'work' ? 'Подход' : 'Отдых';
+  document.getElementById('timerRing').classList.toggle('rest', phase === 'rest');
+}
+function updateTimerDisplay() {
+  const m = Math.floor(timerRemaining / 60);
+  const s = timerRemaining % 60;
+  document.getElementById('timerTime').textContent = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  const ring = document.getElementById('timerRing');
+  const circ = 490;
+  const offset = circ * (1 - timerRemaining / timerTotal);
+  ring.style.strokeDashoffset = offset;
+}
+function timerAction(action) {
+  if (action === 'toggle') {
+    if (timerRunning) stopTimer();
+    else startTimer();
+  } else if (action === 'reset') {
+    stopTimer();
+    setTimer(timerPhase === 'work' ? 45 : 60, timerPhase);
+  } else if (action === 'skip') {
+    stopTimer();
+    if (timerPhase === 'work') setTimer(60, 'rest');
+    else setTimer(45, 'work');
+  }
+}
+function startTimer() {
+  timerRunning = true;
+  document.getElementById('timerBtnText').textContent = 'Пауза';
+  document.getElementById('timerBtnIcon').innerHTML = '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>';
+  timerInterval = setInterval(() => {
+    timerRemaining--;
+    if (timerRemaining <= 0) {
+      stopTimer();
+      if (timerPhase === 'work') setTimer(60, 'rest');
+      else setTimer(45, 'work');
+      beep();
+    }
+    updateTimerDisplay();
+  }, 1000);
+}
+function stopTimer() {
+  timerRunning = false;
+  clearInterval(timerInterval);
+  document.getElementById('timerBtnText').textContent = 'Старт';
+  document.getElementById('timerBtnIcon').innerHTML = '<polygon points="5,3 19,12 5,21"/>';
+}
+function beep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.frequency.value = 880;
+    g.gain.setValueAtTime(.2, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(.001, ctx.currentTime + .3);
+    o.start(); o.stop(ctx.currentTime + .3);
+  } catch(e){}
+}
+
+// ========== CAMERA / POSE DETECTION ==========
+let detector = null;
+let cameraStream = null;
+let cameraRunning = false;
+let cameraAnimId = null;
+let currentCamExercise = 'pushups';
+let repCount = 0;
+let lastPhase = 'up'; // up or down
+let camStartTime = 0;
+let camTimerInterval = null;
+
+function initCameraMode() {
+  renderExerciseSelect();
+}
+
+function renderExerciseSelect() {
+  const sel = document.getElementById('exerciseSelect');
+  sel.innerHTML = Object.entries(cameraExercises).map(([key, ex]) => `
+    <button class="ex-select-btn ${key===currentCamExercise?'active':''}" onclick="selectCameraExercise('${key}')">
+      <span class="em">${ex.emoji}</span>
+      <span>${ex.name}</span>
+    </button>
+  `).join('');
+}
+
+function selectCameraExercise(key) {
+  currentCamExercise = key;
+  renderExerciseSelect();
+  resetCameraCounter();
+  if (cameraRunning) {
+    // restart detection with new exercise
+  }
+}
+
+async function startCamera() {
+  const loading = document.getElementById('cameraLoading');
+  const loadingText = document.getElementById('cameraLoadingText');
+  loading.classList.remove('hidden');
+  loadingText.textContent = 'Запрашиваем доступ к камере...';
+
+  try {
+    cameraStream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+      audio: false
+    });
+    const video = document.getElementById('cameraVideo');
+    video.srcObject = cameraStream;
+    await new Promise(res => { video.onloadedmetadata = res; });
+    video.play();
+
+    loadingText.textContent = 'Загрузка модели pose-detection...';
+
+    if (!detector) {
+      detector = await poseDetection.createDetector(
+        poseDetection.SupportedModels.MoveNet,
+        {
+          modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING,
+          enableSmoothing: true
+        }
+      );
+    }
+
+    loadingText.textContent = 'Готово! Встань в кадр целиком';
+    setTimeout(() => loading.classList.add('hidden'), 600);
+
+    cameraRunning = true;
+    camStartTime = Date.now();
+    repCount = 0;
+    lastPhase = 'up';
+    document.getElementById('camReps').textContent = '0';
+
+    if (camTimerInterval) clearInterval(camTimerInterval);
+    camTimerInterval = setInterval(updateCameraTime, 1000);
+    updateCameraTime();
+
+    detectLoop();
+  } catch (err) {
+    console.error(err);
+    loadingText.textContent = 'Ошибка: ' + (err.message || 'нет доступа к камере');
+    setTimeout(() => loading.classList.add('hidden'), 2500);
+  }
+}
+
+function stopCamera() {
+  cameraRunning = false;
+  if (cameraAnimId) cancelAnimationFrame(cameraAnimId);
+  if (camTimerInterval) clearInterval(camTimerInterval);
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(t => t.stop());
+    cameraStream = null;
+  }
+  const video = document.getElementById('cameraVideo');
+  if (video) video.srcObject = null;
+  const canvas = document.getElementById('cameraCanvas');
+  if (canvas) {
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+}
+
+function resetCameraCounter() {
+  repCount = 0;
+  lastPhase = 'up';
+  camStartTime = Date.now();
+  document.getElementById('camReps').textContent = '0';
+  document.getElementById('camTime').textContent = '00:00';
+  document.getElementById('camPhase').textContent = 'Готовься';
+  document.getElementById('camPhase').className = 'cam-phase';
+}
+
+function updateCameraTime() {
+  const elapsed = Math.floor((Date.now() - camStartTime) / 1000);
+  const m = Math.floor(elapsed / 60);
+  const s = elapsed % 60;
+  document.getElementById('camTime').textContent = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
+async function detectLoop() {
+  if (!cameraRunning) return;
+  const video = document.getElementById('cameraVideo');
+  const canvas = document.getElementById('cameraCanvas');
+
+  if (video.videoWidth === 0) {
+    cameraAnimId = requestAnimationFrame(detectLoop);
+    return;
+  }
+
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+
+  try {
+    const poses = await detector.estimatePoses(video);
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (poses && poses.length > 0) {
+      const pose = poses[0];
+      drawPose(ctx, pose);
+      processRep(pose);
+    }
+  } catch (e) {
+    console.error('detect err', e);
+  }
+
+  cameraAnimId = requestAnimationFrame(detectLoop);
+}
+
+// Keypoint indices for MoveNet
+// 0:nose, 5:leftShoulder, 6:rightShoulder, 7:leftElbow, 8:rightElbow, 9:leftWrist, 10:rightWrist
+// 11:leftHip, 12:rightHip, 13:leftKnee, 14:rightKnee, 15:leftAnkle, 16:rightAnkle
+const KP = {
+  leftShoulder: 5, rightShoulder: 6,
+  leftElbow: 7, rightElbow: 8,
+  leftWrist: 9, rightWrist: 10,
+  leftHip: 11, rightHip: 12,
+  leftKnee: 13, rightKnee: 14,
+  leftAnkle: 15, rightAnkle: 16
+};
+
+function getAngle(a, b, c) {
+  // angle at point b
+  const ab = { x: a.x - b.x, y: a.y - b.y };
+  const cb = { x: c.x - b.x, y: c.y - b.y };
+  const dot = ab.x * cb.x + ab.y * cb.y;
+  const cross = ab.x * cb.y - ab.y * cb.x;
+  let angle = Math.atan2(Math.abs(cross), dot);
+  return angle * 180 / Math.PI;
+}
+
+function kpVisible(kp) {
+  return kp && kp.score > 0.3;
+}
+
+function processRep(pose) {
+  const kps = pose.keypoints;
+  const ex = cameraExercises[currentCamExercise];
+  const phaseEl = document.getElementById('camPhase');
+
+  let angle = null;
+  let valid = false;
+
+  if (ex.joint === 'elbow') {
+    // Try both arms, pick the one with better visibility
+    const tryArm = (sh, el, wr) => {
+      const s = kps[sh], e = kps[el], w = kps[wr];
+      if (kpVisible(s) && kpVisible(e) && kpVisible(w)) {
+        return getAngle(s, e, w);
+      }
+      return null;
+    };
+    const left = tryArm(KP.leftShoulder, KP.leftElbow, KP.leftWrist);
+    const right = tryArm(KP.rightShoulder, KP.rightElbow, KP.rightWrist);
+    if (left !== null && right !== null) angle = Math.min(left, right);
+    else if (left !== null) angle = left;
+    else if (right !== null) angle = right;
+    if (angle !== null) valid = true;
+  } else if (ex.joint === 'knee') {
+    const tryLeg = (hip, knee, ankle) => {
+      const h = kps[hip], k = kps[knee], a = kps[ankle];
+      if (kpVisible(h) && kpVisible(k) && kpVisible(a)) {
+        return getAngle(h, k, a);
+      }
+      return null;
+    };
+    const left = tryLeg(KP.leftHip, KP.leftKnee, KP.leftAnkle);
+    const right = tryLeg(KP.rightHip, KP.rightKnee, KP.rightAnkle);
+    if (left !== null && right !== null) angle = Math.min(left, right);
+    else if (left !== null) angle = left;
+    else if (right !== null) angle = right;
+    if (angle !== null) valid = true;
+  }
+
+  if (!valid || angle === null) {
+    phaseEl.textContent = 'Встань в кадр';
+    phaseEl.className = 'cam-phase';
+    return;
+  }
+
+  let phase;
+  if (angle >= ex.upAngle) phase = 'up';
+  else if (angle <= ex.downAngle) phase = 'down';
+  else phase = lastPhase;
+
+  if (phase !== lastPhase) {
+    if (lastPhase === 'down' && phase === 'up') {
+      repCount++;
+      document.getElementById('camReps').textContent = repCount;
+      beep();
+      // small vibration feedback if available
+      if (navigator.vibrate) navigator.vibrate(50);
+    }
+    lastPhase = phase;
+  }
+
+  if (phase === 'down') {
+    phaseEl.textContent = '⬇ Вниз';
+    phaseEl.className = 'cam-phase down';
+  } else {
+    phaseEl.textContent = '⬆ Вверх';
+    phaseEl.className = 'cam-phase up';
+  }
+}
+
+function drawPose(ctx, pose) {
+  const kps = pose.keypoints
+    .filter(k => k.score > 0.3)
+    .map(k => ({ x: k.x, y: k.y }));
+
+  // Draw skeleton connections
+  const connections = [
+    [5,6],[5,7],[7,9],[6,8],[8,10],[5,11],[6,12],[11,12],[11,13],[13,15],[12,14],[14,16]
+  ];
+
+  ctx.strokeStyle = '#d4ff3d';
+  ctx.lineWidth = 4;
+  ctx.lineCap = 'round';
+  ctx.shadowColor = '#d4ff3d';
+  ctx.shadowBlur = 10;
+
+  connections.forEach(([a,b]) => {
+    const ka = pose.keypoints[a];
+    const kb = pose.keypoints[b];
+    if (ka.score > 0.3 && kb.score > 0.3) {
+      ctx.beginPath();
+      ctx.moveTo(ka.x, ka.y);
+      ctx.lineTo(kb.x, kb.y);
+      ctx.stroke();
+    }
+  });
+
+  // Draw keypoints
+  ctx.shadowBlur = 0;
+  pose.keypoints.forEach(k => {
+    if (k.score > 0.3) {
+      ctx.fillStyle = '#00e5c7';
+      ctx.beginPath();
+      ctx.arc(k.x, k.y, 6, 0, Math.PI*2);
+      ctx.fill();
+      ctx.strokeStyle = '#0a0b0f';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  });
+}
+
+// ========== LIBRARY ==========
+let currentMuscle = 'all';
+function renderLibrary() {
+  const grid = document.getElementById('libraryGrid');
+  const filtered = library.filter(e => currentMuscle === 'all' || e.group === currentMuscle);
+  grid.innerHTML = filtered.map(e => `
+    <div class="ex-card">
+      <div class="ex-card-head">
+        <div>
+          <h4>${e.name}</h4>
+          <div class="group">${e.group}</div>
+        </div>
+      </div>
+      <div class="equip">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6.5 6.5L17.5 17.5M21 21l-3.5-3.5M3 3l3.5 3.5"/></svg>
+        ${e.equip}
+      </div>
+      <div class="mistakes"><b>Ошибки:</b> ${e.mistakes}</div>
+    </div>
+  `).join('');
+}
+document.querySelectorAll('#muscleFilters .filter-chip').forEach(c => c.addEventListener('click', () => {
+  document.querySelectorAll('#muscleFilters .filter-chip').forEach(x => x.classList.remove('active'));
+  c.classList.add('active');
+  currentMuscle = c.dataset.muscle;
+  renderLibrary();
+}));
+renderLibrary();
+
+// ========== ANALYTICS ==========
+function drawVolumeChart() {
+  const svg = document.getElementById('volumeChart');
+  const data = [8.2, 9.1, 8.8, 10.3, 11.2, 10.8, 12.1, 12.4];
+  const labels = ['Н1','Н2','Н3','Н4','Н5','Н6','Н7','Н8'];
+  const w = 600, h = 220, pad = 30;
+  const max = 14;
+  const bw = (w - pad*2) / data.length;
+  let html = '';
+  for (let i=0; i<=4; i++) {
+    const y = pad + (h - pad*2) * i/4;
+    html += `<line x1="${pad}" y1="${y}" x2="${w-pad}" y2="${y}" stroke="#262a33"/>`;
+    html += `<text x="${pad-8}" y="${y+4}" text-anchor="end" fill="#5a5f68" font-size="11">${(max - max*i/4).toFixed(0)}т</text>`;
+  }
+  data.forEach((v, i) => {
+    const x = pad + bw*i + bw*0.2;
+    const bh = (h - pad*2) * v/max;
+    const y = h - pad - bh;
+    const isLast = i === data.length - 1;
+    html += `<rect x="${x}" y="${y}" width="${bw*0.6}" height="${bh}" rx="6" fill="${isLast?'url(#readinessGrad)':'#262a33'}" opacity="${isLast?1:.7}"/>`;
+    html += `<text x="${x + bw*0.3}" y="${h-8}" text-anchor="middle" fill="#8a8f98" font-size="11">${labels[i]}</text>`;
+    if (isLast) html += `<text x="${x + bw*0.3}" y="${y-6}" text-anchor="middle" fill="#d4ff3d" font-size="12" font-weight="600">${v}т</text>`;
+  });
+  svg.innerHTML = html;
+}
+function drawProgressChart() {
+  const svg = document.getElementById('progressChart');
+  const data = [70, 72.5, 75, 77.5, 80, 82.5, 85, 87.5, 90, 92.5, 95, 100];
+  const w = 400, h = 220, pad = 30;
+  const max = 110, min = 60;
+  const stepX = (w - pad*2) / (data.length - 1);
+  let html = '';
+  for (let i=0; i<=4; i++) {
+    const y = pad + (h - pad*2) * i/4;
+    html += `<line x1="${pad}" y1="${y}" x2="${w-pad}" y2="${y}" stroke="#262a33"/>`;
+  }
+  let path = '', area = '';
+  data.forEach((v, i) => {
+    const x = pad + stepX*i;
+    const y = pad + (h - pad*2) * (1 - (v-min)/(max-min));
+    path += (i===0 ? 'M' : 'L') + x + ',' + y + ' ';
+    area += (i===0 ? 'M' : 'L') + x + ',' + y + ' ';
+  });
+  area += `L${pad + stepX*(data.length-1)},${h-pad} L${pad},${h-pad} Z`;
+  html += `<path d="${area}" fill="url(#chartGrad)"/>`;
+  html += `<path d="${path}" fill="none" stroke="#d4ff3d" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`;
+  data.forEach((v, i) => {
+    const x = pad + stepX*i;
+    const y = pad + (h - pad*2) * (1 - (v-min)/(max-min));
+    html += `<circle cx="${x}" cy="${y}" r="3" fill="#d4ff3d"/>`;
+  });
+  const lastX = pad + stepX*(data.length-1);
+  const lastY = pad + (h - pad*2) * (1 - (data[data.length-1]-min)/(max-min));
+  html += `<circle cx="${lastX}" cy="${lastY}" r="6" fill="#d4ff3d" opacity=".3"/>`;
+  html += `<text x="${lastX}" y="${lastY-14}" text-anchor="middle" fill="#d4ff3d" font-size="13" font-weight="700">${data[data.length-1]} кг</text>`;
+  svg.innerHTML = html;
+}
+function drawRecoveryChart() {
+  const svg = document.getElementById('recoveryChart');
+  const data = [72, 68, 75, 80, 78, 82, 76, 85, 79, 88, 82, 90, 84, 82];
+  const w = 600, h = 220, pad = 30;
+  const max = 100, min = 50;
+  const stepX = (w - pad*2) / (data.length - 1);
+  let html = '';
+  for (let i=0; i<=4; i++) {
+    const y = pad + (h - pad*2) * i/4;
+    html += `<line x1="${pad}" y1="${y}" x2="${w-pad}" y2="${y}" stroke="#262a33"/>`;
+    html += `<text x="${pad-8}" y="${y+4}" text-anchor="end" fill="#5a5f68" font-size="11">${Math.round(max - (max-min)*i/4)}%</text>`;
+  }
+  let path = '', area = '';
+  data.forEach((v, i) => {
+    const x = pad + stepX*i;
+    const y = pad + (h - pad*2) * (1 - (v-min)/(max-min));
+    path += (i===0 ? 'M' : 'L') + x + ',' + y + ' ';
+    area += (i===0 ? 'M' : 'L') + x + ',' + y + ' ';
+  });
+  area += `L${pad + stepX*(data.length-1)},${h-pad} L${pad},${h-pad} Z`;
+  html += `<defs><linearGradient id="recGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#00e5c7" stop-opacity=".4"/><stop offset="100%" stop-color="#00e5c7" stop-opacity="0"/></linearGradient></defs>`;
+  html += `<path d="${area}" fill="url(#recGrad)"/>`;
+  html += `<path d="${path}" fill="none" stroke="#00e5c7" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`;
+  data.forEach((v, i) => {
+    const x = pad + stepX*i;
+    const y = pad + (h - pad*2) * (1 - (v-min)/(max-min));
+    html += `<circle cx="${x}" cy="${y}" r="3" fill="#00e5c7"/>`;
+  });
+  svg.innerHTML = html;
+}
+drawVolumeChart();
+drawProgressChart();
+drawRecoveryChart();
+
+// ========== JOURNAL ==========
+function renderJournal() {
+  const el = document.getElementById('journalEntries');
+  el.innerHTML = journalData.map(e => `
+    <div class="entry">
+      <div class="entry-head">
+        <div class="entry-date">${e.date}</div>
+        <div class="entry-tags">
+          <span class="entry-tag">${e.diff}</span>
+          <span class="entry-tag">Боль: ${e.pain}/10</span>
+        </div>
+      </div>
+      <div class="entry-note">${e.note}</div>
+    </div>
+  `).join('');
+}
+function saveJournal() {
+  const diff = document.getElementById('journalDiff').value;
+  const feel = document.getElementById('journalFeel').value;
+  const pain = document.getElementById('journalPain').value;
+  const note = document.getElementById('journalNote').value.trim();
+  if (!note) { alert('Напиши хотя бы пару слов'); return; }
+  const today = new Date();
+  const months = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+  const dateStr = `${today.getDate()} ${months[today.getMonth()]}`;
+  journalData.unshift({date:dateStr, diff, feel, pain, note});
+  document.getElementById('journalNote').value = '';
+  renderJournal();
+}
+renderJournal();
+
+// ========== CHECKLIST ==========
+function renderChecklist() {
+  const el = document.getElementById('checklistItems');
+  el.innerHTML = checklist.map((c, i) => `
+    <div class="check-item ${c.checked?'checked':''}" onclick="toggleCheck(${i})">
+      <div class="check-box">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+      </div>
+      <div style="font-size:20px">${c.icon}</div>
+      <div class="check-info">
+        <div class="t">${c.t}</div>
+        <div class="s">${c.s}</div>
+      </div>
+    </div>
+  `).join('');
+  updateCheckCount();
+}
+function toggleCheck(i) {
+  checklist[i].checked = !checklist[i].checked;
+  renderChecklist();
+}
+function updateCheckCount() {
+  const done = checklist.filter(c => c.checked).length;
+  document.getElementById('checkCount').textContent = `${done}/${checklist.length}`;
+}
+renderChecklist();
+
+// ========== MODAL CLOSE ==========
+document.getElementById('playerModal').addEventListener('click', e => {
+  if (e.target.id === 'playerModal') closePlayer();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closePlayer();
+});
+
+// Start camera when camera view becomes active
+const camViewObserver = new MutationObserver(() => {
+  const camView = document.getElementById('cameraView');
+  if (camView.classList.contains('active') && cameraRunning === false) {
+    startCamera();
+  }
+});
+camViewObserver.observe(document.getElementById('cameraView'), { attributes: true, attributeFilter: ['class'] });
+
+// Init
+initUser();
+</script>
+</body>
+</html>
